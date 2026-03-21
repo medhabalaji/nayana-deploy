@@ -1,52 +1,52 @@
 import cv2
 import numpy as np
 from PIL import Image
+import torch
+import timm
+from torchvision import transforms
+import streamlit as st
+
+EYE_CLASSES = ['Bulging_Eyes', 'Cataracts', 'Conjunctivitis', 
+                'Crossed_Eyes', 'Normal', 'Uveitis']
+
+@st.cache_resource
+def load_eye_model():
+    from torchvision import models
+    m = models.efficientnet_b0(weights=None)
+    m.classifier[1] = torch.nn.Linear(m.classifier[1].in_features, 6)
+    m.load_state_dict(torch.load('eye_model_clean_best.pth',
+                                  map_location='cpu',
+                                  weights_only=False))
+    m.eval()
+    return m
 
 def analyze_front_eye(image_pil):
-    img     = np.array(image_pil.convert('RGB'))
+    tf = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406],
+                             [0.229, 0.224, 0.225])
+    ])
+    img_tensor = tf(image_pil.convert('RGB')).unsqueeze(0)
+    with torch.no_grad():
+        probs = torch.softmax(
+            load_eye_model()(img_tensor), dim=1
+        )[0].numpy()
+
     results = {}
-    hsv       = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
-    lower_red1 = np.array([0,   50,  50])
-    upper_red1 = np.array([10,  255, 255])
-    lower_red2 = np.array([160, 50,  50])
-    upper_red2 = np.array([180, 255, 255])
-    mask1      = cv2.inRange(hsv, lower_red1, upper_red1)
-    mask2      = cv2.inRange(hsv, lower_red2, upper_red2)
-    red_mask   = mask1 + mask2
-    red_ratio  = red_mask.sum() / (255 * img.shape[0] * img.shape[1])
-    results['Redness / Conjunctivitis'] = min(red_ratio * 8, 1.0)
-    gray    = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    h, w    = gray.shape
-    top_half = gray[:h//2, :]
-    edges    = cv2.Canny(top_half, 50, 150)
-    edge_density = edges.sum() / (255 * top_half.size)
-    results['Swelling / Puffiness'] = min(edge_density * 15, 1.0)
-    lab         = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
-    b_channel   = lab[:, :, 2].astype(float)
-    yellow_mean = b_channel.mean()
-    jaundice_score = max(0, (yellow_mean - 120) / 60)
-    results['Jaundice'] = min(jaundice_score, 1.0)
-    gray_blur  = cv2.GaussianBlur(gray, (15,15), 0)
-    circles    = cv2.HoughCircles(
-        gray_blur, cv2.HOUGH_GRADIENT, 1, 30,
-        param1=50, param2=30, minRadius=10, maxRadius=80)
-    if circles is not None:
-        cx, cy, r = map(int, circles[0][0])
-        pupil_roi  = gray[max(0,cy-r):cy+r, max(0,cx-r):cx+r]
-        if pupil_roi.size > 0:
-            brightness = pupil_roi.mean()
-            cataract_score = max(0, (brightness - 40) / 100)
-            results['Cataract'] = min(cataract_score, 1.0)
-        else:
-            results['Cataract'] = 0.1
-    else:
-        results['Cataract'] = 0.1
-    top_region    = gray[:h//3, w//4:3*w//4]
-    bottom_region = gray[2*h//3:, w//4:3*w//4]
-    top_bright    = top_region.mean()
-    bottom_bright = bottom_region.mean()
-    ptosis_score  = max(0, (bottom_bright - top_bright) / 100)
-    results['Drooping Eyelid (Ptosis)'] = min(ptosis_score, 1.0)
+    for cls, prob in zip(EYE_CLASSES, probs):
+        if cls == 'Normal':
+            continue
+        # Map class names to display names
+        display = {
+            'Bulging_Eyes': 'Bulging Eyes',
+            'Cataracts': 'Cataract',
+            'Conjunctivitis': 'Redness / Conjunctivitis',
+            'Crossed_Eyes': 'Crossed Eyes',
+            'Uveitis': 'Uveitis'
+        }.get(cls, cls)
+        results[display] = float(prob)
+
     return results
 
 def get_front_eye_recommendations(results):
@@ -58,13 +58,13 @@ def get_front_eye_recommendations(results):
         if score > 0.4:
             if condition == 'Redness / Conjunctivitis':
                 recommendations.append("Possible conjunctivitis — avoid touching eyes, consult a doctor if persists beyond 2 days")
-            elif condition == 'Swelling / Puffiness':
-                recommendations.append("Eye swelling detected — apply cold compress, seek medical attention if painful")
-            elif condition == 'Jaundice':
-                recommendations.append("Yellowing of eyes detected — this may indicate liver issues, consult a doctor immediately")
             elif condition == 'Cataract':
                 recommendations.append("Possible cataract — schedule a detailed eye examination with an ophthalmologist")
-            elif condition == 'Drooping Eyelid (Ptosis)':
-                recommendations.append("Eyelid drooping detected — consult a specialist to rule out neurological causes")
-    needs_fundus = any(results.get(c, 0) > 0.5 for c in ['Cataract', 'Drooping Eyelid (Ptosis)'])
+            elif condition == 'Uveitis':
+                recommendations.append("Possible uveitis — this needs urgent attention, see a doctor immediately")
+            elif condition == 'Bulging Eyes':
+                recommendations.append("Eye bulging detected — consult a specialist to rule out thyroid issues")
+            elif condition == 'Crossed Eyes':
+                recommendations.append("Eye misalignment detected — consult an ophthalmologist")
+    needs_fundus = any(results.get(c, 0) > 0.5 for c in ['Cataract', 'Uveitis'])
     return recommendations, high_risk, needs_fundus
