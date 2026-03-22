@@ -1,0 +1,22 @@
+{
+  "khushi@khushi.com": {
+    "profile": {
+      "name": "khushu",
+      "age": 20,
+      "gender": "Female",
+      "patient_id": "P-57827",
+      "joined": "22 Mar 2026",
+      "blood_group": "",
+      "known_conditions": [],
+      "family_history": [],
+      "current_medications": [],
+      "allergies": []
+    },
+    "continuity_notes": [],
+    "visit_ids": [
+      "CASE-0008",
+      "CASE-0009",
+      "CASE-0010"
+    ]
+  }
+}

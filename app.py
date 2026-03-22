@@ -12,7 +12,8 @@ from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
 from report_generator import generate_report
 from voice_input import record_voice
-from database import load_cases, save_case, update_case
+from database import load_cases, save_case, update_case, get_patient_visits
+from patient_records import render_patient_health_record, render_doctor_patient_history
 from auth import (register_patient, login_patient,
                   register_doctor, login_doctor, get_all_doctors)
 from styles import load_css
@@ -378,7 +379,7 @@ def patient_navbar(user):
         <div class="topnav-user">Hello, {user['name']}</div>
     </div>
     """, unsafe_allow_html=True)
-    c1,c2,c3,c4,c5 = st.columns([2,1.2,1.2,1.2,0.6])
+    c1,c2,c3,c4,c5,c6 = st.columns([2,1,1,1,1,0.6])
     if c2.button("Screening",
                  type=("primary" if st.session_state['page']=='screening'
                        else "secondary"),
@@ -392,7 +393,13 @@ def patient_navbar(user):
                  use_container_width=True, key="nav_res"):
         st.session_state['page'] = 'results'
         st.rerun()
-    if c4.button("Sign Out",
+    if c4.button("Health Record",
+                 type=("primary" if st.session_state['page']=='health_record'
+                       else "secondary"),
+                 use_container_width=True, key="nav_hr"):
+        st.session_state['page'] = 'health_record'
+        st.rerun()
+    if c5.button("Sign Out",
                  use_container_width=True, key="nav_so"):
         keys_to_clear = [k for k in st.session_state.keys()
                         if k not in ['dark_mode']]
@@ -400,7 +407,7 @@ def patient_navbar(user):
             del st.session_state[k]
         st.rerun()
     dark_label = "☀" if st.session_state['dark_mode'] else "●"
-    if c5.button(dark_label, use_container_width=True, key="nav_theme"):
+    if c6.button(dark_label, use_container_width=True, key="nav_theme"):
         st.session_state['dark_mode'] = not st.session_state['dark_mode']
         st.rerun()
     st.write("")
@@ -563,6 +570,46 @@ def render_my_results(my_cases):
             st.divider()
             render_chat(case['case_id'], 'patient',
                         st.session_state['patient_user']['name'])
+            st.write("")
+            if st.button("Download Report", key=f"dl_{case['case_id']}", use_container_width=True):
+                with st.spinner("Generating report..."):
+                    case_probs = np.array(case.get('probs', [0]*8))
+                    case_det   = case.get('detected_conditions', [])
+                    msgs       = load_messages(case['case_id'])
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
+                        pdf_path = generate_report(
+                            patient_name=case['patient_name'],
+                            patient_age=case['patient_age'],
+                            patient_gender=case['patient_gender'],
+                            patient_email=case.get('patient_email',''),
+                            symptoms=case['symptoms'],
+                            quality_score=case['quality_score'],
+                            quality_tips=[],
+                            probs=case_probs,
+                            detected_conditions=case_det,
+                            risk_level=case['risk_level'],
+                            risk_type=('high' if 'High' in case['risk_level'] or 'specialist' in case['risk_level'] else 'moderate' if 'Moderate' in case['risk_level'] else 'low'),
+                            original_image_pil=Image.open(case['image_path']) if case.get('image_path') and os.path.exists(case['image_path']) else None,
+                            heatmap_array=np.array(Image.open(case['heatmap_path'])) if case.get('heatmap_path') and os.path.exists(case['heatmap_path']) else None,
+                            doctor_name=case.get('doctor_diagnosis','')[:30] if case.get('doctor_diagnosis') else None,
+                            doctor_diagnosis=case.get('doctor_diagnosis'),
+                            doctor_prescription=case.get('doctor_prescription'),
+                            doctor_referral=case.get('doctor_referral'),
+                            doctor_notes=case.get('doctor_notes'),
+                            reviewed_at=case.get('reviewed_at'),
+                            chat_messages=msgs,
+                            visit_history=get_patient_visits(case.get('patient_email','')),
+                            output_path=tmp.name
+                        )
+                with open(pdf_path, 'rb') as f:
+                    st.download_button(
+                        "Download PDF",
+                        data=f.read(),
+                        file_name=f"nayana_{case['patient_name'].replace(' ','_')}_{case['case_id']}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True,
+                        key=f"pdf_{case['case_id']}"
+                    )
 
 # ══════════════════════════════════════════════════════════════
 # LANDING
@@ -1080,11 +1127,19 @@ elif st.session_state['role'] == 'patient':
                                 with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
                                     pdf_path = generate_report(
                                         patient_name=pname, patient_age=int(page_),
-                                        patient_gender=pgender, symptoms=symp_final + fe_str,
+                                        patient_gender=pgender, patient_email=user['email'],
+                                        symptoms=symp_final + fe_str,
                                         quality_score=score, quality_tips=tips,
                                         probs=probs, detected_conditions=det_conds,
-                                        risk_level=risk_txt, original_image_pil=fundus_pil,
-                                        heatmap_array=heatmap, output_path=tmp.name)
+                                        risk_level=risk_txt, risk_type=risk_type,
+                                        original_image_pil=fundus_pil,
+                                        heatmap_array=heatmap,
+                                        front_eye_image_pil=front_pil,
+                                        front_eye_results=fe_results,
+                                        front_eye_recommendations=fe_recs,
+                                        triage_decision=st.session_state.get('triage','front'),
+                                        visit_history=get_patient_visits(user['email']),
+                                        output_path=tmp.name)
                             with open(pdf_path,'rb') as f:
                                 st.download_button("Download PDF", data=f.read(),
                                     file_name=f"nayana_{pname.replace(' ','_')}.pdf",
@@ -1110,7 +1165,10 @@ elif st.session_state['role'] == 'patient':
             all_cases = load_cases()
             my_cases  = [c for c in all_cases if c.get('patient_email','') == user['email']]
             render_my_results(my_cases)
-
+        elif st.session_state['page'] == 'health_record':
+            st.markdown('<div class="page-title">My Health Record</div>', unsafe_allow_html=True)
+            st.markdown('<div class="page-sub">Your complete eye health history</div>', unsafe_allow_html=True)
+            render_patient_health_record(user)
 # ══════════════════════════════════════════════════════════════
 # DOCTOR PORTAL
 # ══════════════════════════════════════════════════════════════
@@ -1316,6 +1374,11 @@ elif st.session_state['role'] == 'doctor':
 
                             st.markdown("**Your Diagnosis**")
                             already_reviewed = (status == "Reviewed" and not st.session_state.get(f"edit_{case['case_id']}", False))
+
+                            if st.button("View Full Patient History", key=f"hist_{case['case_id']}", use_container_width=True):
+                                st.session_state[f"show_history_{case['case_id']}"] = not st.session_state.get(f"show_history_{case['case_id']}", False)
+                            if st.session_state.get(f"show_history_{case['case_id']}", False):
+                                render_doctor_patient_history(case.get('patient_email',''), doc['name'])
 
                             if already_reviewed:
                                 st.success(f"Reviewed: {case.get('reviewed_at','')}")

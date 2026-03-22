@@ -11,5 +11,57 @@
     "case_id": "CASE-0006",
     "notes": "",
     "created_at": "22 Mar 2026, 12:55 PM"
+  },
+  {
+    "appointment_id": "APPT-0002",
+    "patient_email": "khushi@khushi.com",
+    "patient_name": "khushu",
+    "doctor_email": "anagha@anagha.com",
+    "doctor_name": "anagha",
+    "date": "2026-03-22",
+    "time_slot": "09:00 AM",
+    "status": "Pending",
+    "case_id": "CASE-0007",
+    "notes": "jmkk",
+    "created_at": "22 Mar 2026, 01:38 PM"
+  },
+  {
+    "appointment_id": "APPT-0003",
+    "patient_email": "khushi@khushi.com",
+    "patient_name": "khushu",
+    "doctor_email": "anagha@anagha.com",
+    "doctor_name": "anagha",
+    "date": "2026-03-22",
+    "time_slot": "09:00 AM",
+    "status": "Pending",
+    "case_id": "CASE-0008",
+    "notes": "",
+    "created_at": "22 Mar 2026, 02:23 PM"
+  },
+  {
+    "appointment_id": "APPT-0004",
+    "patient_email": "khushi@khushi.com",
+    "patient_name": "khushu",
+    "doctor_email": "anagha@anagha.com",
+    "doctor_name": "anagha",
+    "date": "2026-03-22",
+    "time_slot": "09:00 AM",
+    "status": "Confirmed",
+    "case_id": "CASE-0009",
+    "notes": "",
+    "created_at": "22 Mar 2026, 02:55 PM"
+  },
+  {
+    "appointment_id": "APPT-0005",
+    "patient_email": "khushi@khushi.com",
+    "patient_name": "khushu",
+    "doctor_email": "anagha@anagha.com",
+    "doctor_name": "anagha",
+    "date": "2026-03-22",
+    "time_slot": "09:00 AM",
+    "status": "Pending",
+    "case_id": "CASE-0010",
+    "notes": "",
+    "created_at": "22 Mar 2026, 03:23 PM"
   }
 ]

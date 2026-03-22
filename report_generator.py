@@ -3,7 +3,7 @@ from reportlab.lib import colors
 from reportlab.lib.units import cm
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Image,
-    Table, TableStyle, HRFlowable
+    Table, TableStyle, HRFlowable, PageBreak
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
@@ -14,305 +14,676 @@ matplotlib.use('Agg')
 import numpy as np
 import io
 import os
-
-# ── Translation helper ─────────────────────────────────────────
-LANG_CODES = {
-    "Kannada": "kn", "Hindi": "hi",
-    "Tamil": "ta", "Telugu": "te", "English": "en"
-}
-
-def _translate(text, language):
-    if language == "English" or not text:
-        return text
-    try:
-        from deep_translator import GoogleTranslator
-        import signal
-
-        def _timeout_handler(signum, frame):
-            raise TimeoutError()
-
-        # Use threading-based timeout (works on Windows too)
-        import threading
-        result = [text]  # fallback
-
-        def do_translate():
-            try:
-                result[0] = GoogleTranslator(
-                    source='en',
-                    target=LANG_CODES.get(language, 'en')
-                ).translate(text)
-            except Exception:
-                pass  # keep fallback
-
-        t = threading.Thread(target=do_translate)
-        t.start()
-        t.join(timeout=5)  # 5 second max per translation
-        return result[0]
-    except Exception:
-        return text  # always fallback silently
-
+ 
 DISEASE_NAMES = [
     'Normal', 'Diabetic Retinopathy', 'Glaucoma',
     'Cataract', 'AMD', 'Hypertension', 'Myopia', 'Other'
 ]
-DISEASE_COLORS = [
-    '#2ecc71', '#e74c3c', '#e67e22', '#3498db',
-    '#9b59b6', '#f39c12', '#1abc9c', '#95a5a6'
+DISEASE_COLORS_HEX = [
+    '#2d9e6b','#e63946','#f4a261','#457b9d',
+    '#9b5de5','#f77f00','#00b4d8','#74c69d'
 ]
-
-def generate_report(
-    patient_name, patient_age, patient_gender,
-    symptoms, quality_score, quality_tips,
-    probs, detected_conditions, risk_level,
-    original_image_pil, heatmap_array,
-    output_path="screening_report.pdf",
-    language="English"
-):
-    doc = SimpleDocTemplate(
-        output_path,
-        pagesize=A4,
-        rightMargin=2*cm, leftMargin=2*cm,
-        topMargin=2*cm, bottomMargin=2*cm
-    )
-
-    # PDF stays in English — Indic scripts don't render in ReportLab's
-    # default fonts and translation adds significant latency.
-    # Language is noted in the subtitle for reference.
-    lang_note      = f"  [{language}]" if language != "English" else ""
-    symptoms_t     = symptoms
-    risk_level_t   = risk_level
-    quality_tips_t = quality_tips
-    detected_t     = detected_conditions
-
-    styles = getSampleStyleSheet()
-
-    # ── Custom styles ──────────────────────────────────────────
-    title_style = ParagraphStyle(
-        'Title', parent=styles['Normal'],
-        fontSize=16, fontName='Helvetica-Bold',
-        textColor=colors.HexColor('#1F4E79'),
-        alignment=TA_CENTER, spaceAfter=2
-    )
-    subtitle_style = ParagraphStyle(
-        'Subtitle', parent=styles['Normal'],
-        fontSize=11, fontName='Helvetica',
-        textColor=colors.HexColor('#2E75B6'),
-        alignment=TA_CENTER, spaceAfter=2
-    )
-    section_style = ParagraphStyle(
-        'Section', parent=styles['Normal'],
-        fontSize=13, fontName='Helvetica-Bold',
-        textColor=colors.HexColor('#1F4E79'),
-        spaceBefore=14, spaceAfter=6,
-        borderPad=4
-    )
-    body_style = ParagraphStyle(
-        'Body', parent=styles['Normal'],
-        fontSize=10, fontName='Helvetica',
-        textColor=colors.HexColor('#333333'),
-        spaceAfter=4, leading=14
-    )
-    small_style = ParagraphStyle(
-        'Small', parent=styles['Normal'],
-        fontSize=8, fontName='Helvetica',
-        textColor=colors.HexColor('#888888'),
-        alignment=TA_CENTER
-    )
-
-    story = []
-
-    # ── Header ─────────────────────────────────────────────────
-    story.append(Paragraph("AI Tele-Ophthalmology", title_style))
-    story.append(Paragraph("Retinal Screening Report", title_style))
-    story.append(Spacer(1, 4))
-    story.append(Paragraph(
-        f"Powered by EfficientNet-B0 trained on ODIR-5K — 8 Disease Screening{lang_note}",
-        subtitle_style
+ 
+GREEN      = colors.HexColor('#2d9e6b')
+DARK_BLUE  = colors.HexColor('#1e293b')
+MID_GRAY   = colors.HexColor('#64748b')
+LIGHT_GRAY = colors.HexColor('#f1f5f9')
+RED        = colors.HexColor('#e63946')
+AMBER      = colors.HexColor('#f4a261')
+WHITE      = colors.white
+ 
+DISEASE_INFO = {
+    'Diabetic Retinopathy': {
+        'what': 'Damage to blood vessels in the retina caused by high blood sugar over time.',
+        'symptoms': 'Blurred vision, floaters, dark spots, difficulty seeing at night.',
+        'urgency': 'See an ophthalmologist within 1-2 weeks.',
+        'tip': 'Keeping blood sugar levels controlled can slow or prevent progression.',
+        'serious': True
+    },
+    'Glaucoma': {
+        'what': 'A group of eye conditions that damage the optic nerve, often due to high eye pressure.',
+        'symptoms': 'Gradual peripheral vision loss, tunnel vision in advanced stages.',
+        'urgency': 'See an ophthalmologist within 1 week. Early treatment prevents blindness.',
+        'tip': 'Glaucoma often has no symptoms until vision loss has occurred. Regular screening is key.',
+        'serious': True
+    },
+    'Cataract': {
+        'what': 'Clouding of the normally clear lens of the eye.',
+        'symptoms': 'Blurry vision, faded colours, glare, poor night vision.',
+        'urgency': 'Schedule a detailed eye examination. Surgery is highly effective.',
+        'tip': 'Cataracts are very treatable — most patients regain excellent vision after surgery.',
+        'serious': False
+    },
+    'AMD': {
+        'what': 'Age-related Macular Degeneration — deterioration of the central part of the retina.',
+        'symptoms': 'Blurred or distorted central vision, difficulty reading, blind spots.',
+        'urgency': 'Urgent referral to a retina specialist. Some forms are treatable if caught early.',
+        'tip': 'Smoking significantly increases AMD risk. A diet rich in leafy greens may help.',
+        'serious': True
+    },
+    'Hypertension': {
+        'what': 'High blood pressure can damage blood vessels in the retina.',
+        'symptoms': 'Often no eye symptoms until advanced. May cause blurred vision or vision loss.',
+        'urgency': 'Consult a physician to manage blood pressure. Eye review in 1-3 months.',
+        'tip': 'Controlling blood pressure protects both your eyes and your heart.',
+        'serious': False
+    },
+    'Myopia': {
+        'what': 'Short-sightedness — difficulty seeing distant objects clearly.',
+        'symptoms': 'Distant objects appear blurry, squinting, headaches.',
+        'urgency': 'Schedule a routine eye examination for prescription update.',
+        'tip': 'High myopia increases risk of retinal detachment. Regular monitoring recommended.',
+        'serious': False
+    },
+}
+ 
+def _styles():
+    base = getSampleStyleSheet()
+    return {
+        'cover_title': ParagraphStyle('CoverTitle', parent=base['Normal'],
+            fontSize=28, fontName='Helvetica-Bold',
+            textColor=GREEN, alignment=TA_CENTER, spaceAfter=4),
+        'cover_sub': ParagraphStyle('CoverSub', parent=base['Normal'],
+            fontSize=13, fontName='Helvetica',
+            textColor=DARK_BLUE, alignment=TA_CENTER, spaceAfter=4),
+        'cover_body': ParagraphStyle('CoverBody', parent=base['Normal'],
+            fontSize=10, fontName='Helvetica',
+            textColor=MID_GRAY, alignment=TA_CENTER, spaceAfter=3),
+        'section': ParagraphStyle('Section', parent=base['Normal'],
+            fontSize=12, fontName='Helvetica-Bold',
+            textColor=DARK_BLUE, spaceBefore=12, spaceAfter=6),
+        'body': ParagraphStyle('Body', parent=base['Normal'],
+            fontSize=9, fontName='Helvetica',
+            textColor=DARK_BLUE, spaceAfter=3, leading=13),
+        'small': ParagraphStyle('Small', parent=base['Normal'],
+            fontSize=8, fontName='Helvetica',
+            textColor=MID_GRAY, alignment=TA_CENTER),
+        'caption': ParagraphStyle('Caption', parent=base['Normal'],
+            fontSize=8, fontName='Helvetica-Oblique',
+            textColor=MID_GRAY, alignment=TA_CENTER),
+        'risk_high': ParagraphStyle('RiskHigh', parent=base['Normal'],
+            fontSize=13, fontName='Helvetica-Bold',
+            textColor=RED, alignment=TA_CENTER),
+        'risk_mod': ParagraphStyle('RiskMod', parent=base['Normal'],
+            fontSize=13, fontName='Helvetica-Bold',
+            textColor=AMBER, alignment=TA_CENTER),
+        'risk_low': ParagraphStyle('RiskLow', parent=base['Normal'],
+            fontSize=13, fontName='Helvetica-Bold',
+            textColor=GREEN, alignment=TA_CENTER),
+        'label': ParagraphStyle('Label', parent=base['Normal'],
+            fontSize=9, fontName='Helvetica-Bold',
+            textColor=MID_GRAY, spaceAfter=2),
+        'note': ParagraphStyle('Note', parent=base['Normal'],
+            fontSize=9, fontName='Helvetica-Oblique',
+            textColor=MID_GRAY, spaceAfter=3, leading=13),
+    }
+ 
+def _hr(story, color=None, thickness=1):
+    story.append(HRFlowable(
+        width="100%", thickness=thickness,
+        color=color or colors.HexColor('#e2e8f0'),
+        spaceAfter=8, spaceBefore=4
     ))
-    story.append(HRFlowable(width="100%", thickness=2,
-                             color=colors.HexColor('#1F4E79'), spaceAfter=12))
-
-    # ── Patient info table ─────────────────────────────────────
-    story.append(Paragraph("Patient Information", section_style))
-    now = datetime.now().strftime("%d %B %Y, %I:%M %p")
-    # Truncate symptoms if too long
-    symp_display = symptoms_t if len(symptoms_t) < 60 else symptoms_t[:57] + "..."
-    patient_data = [
-        ["Patient Name", patient_name,
-         "Date & Time", now],
-        ["Age", f"{patient_age} years",
-         "Gender", patient_gender],
-        ["Image Quality", f"{quality_score}%",
-         "Reported Symptoms", symp_display],
-    ]
-    patient_table = Table(patient_data, colWidths=[3.5*cm, 5*cm, 3.5*cm, 5*cm])
-    patient_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#EBF3FB')),
-        ('BACKGROUND', (0,1), (-1,1), colors.HexColor('#F7FBFF')),
-        ('BACKGROUND', (0,2), (-1,2), colors.HexColor('#EBF3FB')),
-        ('FONTNAME', (0,0), (0,-1), 'Helvetica-Bold'),
-        ('FONTNAME', (2,0), (2,-1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,-1), 9),
-        ('TEXTCOLOR', (0,0), (0,-1), colors.HexColor('#1F4E79')),
-        ('TEXTCOLOR', (2,0), (2,-1), colors.HexColor('#1F4E79')),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CCCCCC')),
-        ('PADDING', (0,0), (-1,-1), 6),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-    ]))
-    story.append(patient_table)
-    story.append(Spacer(1, 12))
-
-    # ── Quality tips ───────────────────────────────────────────
-    if quality_tips:
-        story.append(Paragraph("Image Quality Notes", section_style))
-        for tip in quality_tips_t:
-            story.append(Paragraph(f"• {tip}", body_style))
-        story.append(Spacer(1, 8))
-
-    # ── Images side by side ────────────────────────────────────
-    story.append(Paragraph("Retinal Images", section_style))
-
-    # Save original image to buffer
-    orig_buf = io.BytesIO()
-    original_image_pil.resize((300, 300)).save(orig_buf, format='PNG')
-    orig_buf.seek(0)
-
-    # Save heatmap to buffer
-    heat_buf = io.BytesIO()
-    heat_img = plt.cm.jet(heatmap_array / 255.0) if heatmap_array.ndim == 2 \
-               else heatmap_array
-    plt.imsave(heat_buf, heatmap_array.astype(np.uint8), format='png')
-    heat_buf.seek(0)
-
-    img_orig = Image(orig_buf, width=7*cm, height=7*cm)
-    img_heat = Image(heat_buf, width=7*cm, height=7*cm)
-
-    img_table = Table(
-        [[img_orig, img_heat],
-         [Paragraph("Original Retinal Image", small_style),
-          Paragraph("AI Attention Heatmap\n(Red = areas of concern)", small_style)]],
-        colWidths=[8.5*cm, 8.5*cm]
-    )
-    img_table.setStyle(TableStyle([
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('PADDING', (0,0), (-1,-1), 6),
-        ('BOX', (0,0), (0,1), 0.5, colors.HexColor('#CCCCCC')),
-        ('BOX', (1,0), (1,1), 0.5, colors.HexColor('#CCCCCC')),
-    ]))
-    story.append(img_table)
-    story.append(Spacer(1, 12))
-
-    # ── AI predictions chart ───────────────────────────────────
-    story.append(Paragraph("AI Screening Results", section_style))
-
+ 
+def _section(story, title, s):
+    story.append(Paragraph(title, s['section']))
+    _hr(story, GREEN, 0.5)
+ 
+def _info_row(label, value, s):
+    return [Paragraph(label, s['label']), Paragraph(str(value), s['body'])]
+ 
+def _pil_to_buf(pil_img, size=(300, 300)):
+    buf = io.BytesIO()
+    pil_img.resize(size).save(buf, format='PNG')
+    buf.seek(0)
+    return buf
+ 
+def _np_to_buf(arr):
+    buf = io.BytesIO()
+    plt.imsave(buf, arr.astype(np.uint8), format='png')
+    buf.seek(0)
+    return buf
+ 
+def _bar_chart(probs):
     fig, ax = plt.subplots(figsize=(7, 3.5))
+    fig.patch.set_facecolor('white')
+    ax.set_facecolor('white')
     bars = ax.barh(DISEASE_NAMES, [p * 100 for p in probs],
-                   color=DISEASE_COLORS, edgecolor='none', height=0.6)
-    ax.set_xlabel("Confidence (%)", fontsize=9)
-    ax.set_xlim(0, 100)
-    ax.axvline(x=50, color='gray', linestyle='--', linewidth=0.8, alpha=0.5)
-    for bar, prob in zip(bars, probs):
-        ax.text(bar.get_width() + 1,
-                bar.get_y() + bar.get_height() / 2,
-                f'{prob*100:.1f}%', va='center', fontsize=8)
-    ax.set_title("Multi-Disease Probability — 50% threshold line shown",
-                 fontsize=9, color='#444444')
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    plt.tight_layout()
-
-    chart_buf = io.BytesIO()
-    plt.savefig(chart_buf, format='png', dpi=150, bbox_inches='tight')
+                   color=DISEASE_COLORS_HEX, height=0.55, edgecolor='none')
+    ax.set_xlabel("Confidence (%)", fontsize=9, color='#64748b')
+    ax.set_xlim(0, 108)
+    ax.axvline(50, color='#cbd5e1', lw=0.8, ls='--')
+    ax.tick_params(colors='#64748b', labelsize=8)
+    for sp in ax.spines.values():
+        sp.set_color('#e2e8f0')
+    for bar, p in zip(bars, probs):
+        ax.text(p * 100 + 1.5, bar.get_y() + bar.get_height() / 2,
+                f'{p * 100:.1f}%', va='center', fontsize=7.5, color='#64748b')
+    plt.tight_layout(pad=0.5)
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
     plt.close()
-    chart_buf.seek(0)
-
-    chart_img = Image(chart_buf, width=17*cm, height=8*cm)
-    story.append(chart_img)
-    story.append(Spacer(1, 12))
-
-    # ── Detected conditions ────────────────────────────────────
-    story.append(Paragraph("Detected Conditions", section_style))
-
-    if detected_conditions:
-        cond_data = [["Condition", "Confidence", "Severity"]]
-        for name, prob in sorted(detected_t,
-                                  key=lambda x: x[1], reverse=True):
-            severity = "High Risk" if prob > 0.7 else "Moderate Risk"
-            sev_color = colors.HexColor('#C00000') if prob > 0.7 \
-                        else colors.HexColor('#9C5700')
-            cond_data.append([name, f"{prob*100:.1f}%", severity])
-
-        cond_table = Table(cond_data,
-                           colWidths=[8*cm, 4*cm, 5*cm])
-        style_cmds = [
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1F4E79')),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0,0), (-1,-1), 10),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CCCCCC')),
-            ('PADDING', (0,0), (-1,-1), 7),
-            ('ALIGN', (1,0), (-1,-1), 'CENTER'),
-        ]
-        for i, (name, prob) in enumerate(
-            sorted(detected_t, key=lambda x: x[1], reverse=True), 1
-        ):
-            bg = colors.HexColor('#FFF0F0') if prob > 0.7 \
-                 else colors.HexColor('#FFFBE6')
-            style_cmds.append(('BACKGROUND', (0,i), (-1,i), bg))
-
-        cond_table.setStyle(TableStyle(style_cmds))
-        story.append(cond_table)
-    else:
-        story.append(Paragraph("No conditions detected above 50% threshold.", body_style))
-
-    story.append(Spacer(1, 12))
-
-    # ── Risk assessment box ────────────────────────────────────
-    story.append(Paragraph("Overall Risk Assessment", section_style))
-
-    risk_color = '#C00000' if 'High' in risk_level \
-                 else '#9C5700' if 'Moderate' in risk_level \
-                 else '#1D6F42'
-    risk_bg = '#FFF0F0' if 'High' in risk_level \
-              else '#FFFBE6' if 'Moderate' in risk_level \
-              else '#F0FFF4'
-
-    risk_style = ParagraphStyle(
-        'Risk', parent=styles['Normal'],
-        fontSize=12, fontName='Helvetica-Bold',
-        textColor=colors.HexColor(risk_color),
-        alignment=TA_CENTER, leading=18
+    buf.seek(0)
+    return buf
+ 
+def _trend_chart(visit_history):
+    if not visit_history or len(visit_history) < 2:
+        return None
+    def rs(r):
+        r = r.lower()
+        if "high" in r or "specialist" in r: return 3
+        elif "moderate" in r or "follow" in r: return 2
+        return 1
+    dates  = [v['timestamp'][:6] for v in visit_history]
+    scores = [rs(v['risk_level']) for v in visit_history]
+    fig, ax = plt.subplots(figsize=(7, 2.5))
+    fig.patch.set_facecolor('white')
+    ax.set_facecolor('white')
+    clrs = {1: '#2d9e6b', 2: '#f4a261', 3: '#e63946'}
+    ax.plot(dates, scores, color='#b7e4c7', linewidth=2, zorder=1)
+    ax.scatter(dates, scores, c=[clrs[s] for s in scores], s=60, zorder=2)
+    ax.set_yticks([1, 2, 3])
+    ax.set_yticklabels(['Low', 'Moderate', 'High'], fontsize=8, color='#64748b')
+    ax.tick_params(axis='x', colors='#64748b', labelsize=7)
+    for sp in ax.spines.values():
+        sp.set_color('#e2e8f0')
+    ax.set_ylim(0.5, 3.5)
+    plt.tight_layout(pad=0.5)
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=120, bbox_inches='tight')
+    plt.close()
+    buf.seek(0)
+    return buf
+ 
+def _header_footer(canvas, doc):
+    canvas.saveState()
+    w, h = A4
+    canvas.setFillColor(GREEN)
+    canvas.setFont('Helvetica-Bold', 8)
+    canvas.drawString(2 * cm, h - 1.2 * cm, "NAYANA - CONFIDENTIAL EYE SCREENING REPORT")
+    canvas.setFillColor(MID_GRAY)
+    canvas.setFont('Helvetica', 8)
+    canvas.drawRightString(w - 2 * cm, h - 1.2 * cm, datetime.now().strftime("%d %b %Y"))
+    canvas.setStrokeColor(colors.HexColor('#e2e8f0'))
+    canvas.line(2 * cm, h - 1.4 * cm, w - 2 * cm, h - 1.4 * cm)
+    canvas.line(2 * cm, 1.4 * cm, w - 2 * cm, 1.4 * cm)
+    canvas.setFillColor(MID_GRAY)
+    canvas.setFont('Helvetica', 7)
+    canvas.drawString(2 * cm, 0.9 * cm,
+                      "This report is AI-assisted. Not a substitute for professional medical advice.")
+    canvas.drawRightString(w - 2 * cm, 0.9 * cm, f"Page {doc.page}")
+    canvas.restoreState()
+ 
+def generate_report(
+        patient_name, patient_age, patient_gender,
+        symptoms, quality_score, quality_tips,
+        probs, detected_conditions, risk_level,
+        original_image_pil, heatmap_array,
+        output_path="screening_report.pdf",
+        language="English",
+        patient_email="",
+        patient_id="",
+        symptoms_method="typed",
+        voice_transcript="",
+        voice_language="English",
+        questionnaire_answers=None,
+        triage_decision="front",
+        front_eye_image_pil=None,
+        front_eye_results=None,
+        front_eye_recommendations=None,
+        front_eye_quality=0,
+        fundus_quality_tips=None,
+        risk_type="low",
+        doctor_name=None,
+        doctor_diagnosis=None,
+        doctor_prescription=None,
+        doctor_referral=None,
+        doctor_notes=None,
+        reviewed_at=None,
+        chat_messages=None,
+        visit_history=None,
+):
+    if questionnaire_answers is None:
+        questionnaire_answers = {}
+    if front_eye_results is None:
+        front_eye_results = {}
+    if front_eye_recommendations is None:
+        front_eye_recommendations = []
+    if fundus_quality_tips is None:
+        fundus_quality_tips = quality_tips or []
+    if chat_messages is None:
+        chat_messages = []
+    if visit_history is None:
+        visit_history = []
+ 
+    # Keep only last 5 visits for clean history
+    recent_visits = visit_history[-5:] if len(visit_history) > 5 else visit_history
+ 
+    s = _styles()
+    now_str   = datetime.now().strftime("%d %B %Y, %I:%M %p")
+    report_id = f"RPT-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    if not patient_id:
+        patient_id = f"P-{abs(hash(patient_email)) % 99999:05d}" if patient_email else "P-00000"
+ 
+    doc = SimpleDocTemplate(
+        output_path, pagesize=A4,
+        rightMargin=2 * cm, leftMargin=2 * cm,
+        topMargin=2.2 * cm, bottomMargin=2 * cm
     )
-    risk_table = Table(
-        [[Paragraph(risk_level_t, risk_style)]],
-        colWidths=[17*cm]
-    )
-    risk_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor(risk_bg)),
-        ('BOX', (0,0), (-1,-1), 1.5, colors.HexColor(risk_color)),
-        ('PADDING', (0,0), (-1,-1), 14),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+    story = []
+ 
+    # ══════════════════════════════════════════════════════════
+    # PAGE 1 - COVER
+    # ══════════════════════════════════════════════════════════
+    story.append(Spacer(1, 2 * cm))
+    story.append(Paragraph("nayana", s['cover_title']))
+    story.append(Paragraph("the eye", s['cover_sub']))
+    story.append(Spacer(1, 0.3 * cm))
+    _hr(story, GREEN, 2)
+    story.append(Spacer(1, 0.5 * cm))
+    story.append(Paragraph("CONFIDENTIAL EYE SCREENING REPORT", s['cover_sub']))
+    story.append(Spacer(1, 1 * cm))
+ 
+    cover_data = [
+        ["Patient Name", patient_name,       "Report ID",  report_id],
+        ["Patient ID",   patient_id,          "Date",       now_str],
+        ["Age / Gender", f"{patient_age}y / {patient_gender}", "Screened by", "Nayana AI v1.0"],
+        ["Email",        patient_email or "-", "Language",  language],
+    ]
+    cover_table = Table(cover_data, colWidths=[3.5 * cm, 5.5 * cm, 3.5 * cm, 5.5 * cm])
+    cover_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), LIGHT_GRAY),
+        ('BACKGROUND', (2, 0), (2, -1), LIGHT_GRAY),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (2, 0), (2, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('TEXTCOLOR', (0, 0), (0, -1), DARK_BLUE),
+        ('TEXTCOLOR', (2, 0), (2, -1), DARK_BLUE),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
+        ('PADDING', (0, 0), (-1, -1), 7),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
     ]))
-    story.append(risk_table)
-    story.append(Spacer(1, 16))
-
-    # ── Disclaimer ─────────────────────────────────────────────
-    story.append(HRFlowable(width="100%", thickness=1,
-                             color=colors.HexColor('#CCCCCC'), spaceAfter=8))
-    disclaimer = (
-        "DISCLAIMER: This report is generated by an AI screening system trained on the ODIR-5K "
-        "dataset and is intended for preliminary screening purposes only. It does NOT constitute "
-        "a medical diagnosis. All findings must be reviewed and confirmed by a qualified "
-        "ophthalmologist before any clinical decisions are made. In case of high-risk findings, "
-        "please refer the patient to a specialist immediately."
-    )
-    story.append(Paragraph(disclaimer, small_style))
-    story.append(Spacer(1, 4))
+    story.append(cover_table)
+    story.append(Spacer(1, 1.5 * cm))
+ 
+    r_style = s['risk_high'] if 'high' in risk_type else s['risk_mod'] if 'moderate' in risk_type else s['risk_low']
+    r_bg    = colors.HexColor('#fff0f0') if 'high' in risk_type else colors.HexColor('#fffbe6') if 'moderate' in risk_type else colors.HexColor('#f0fdf4')
+    r_bc    = RED if 'high' in risk_type else AMBER if 'moderate' in risk_type else GREEN
+    risk_label = "High Risk" if 'high' in risk_type else "Moderate Risk" if 'moderate' in risk_type else "Low Risk"
+    risk_box = Table([[Paragraph(f"Overall Risk: {risk_label}", r_style)]], colWidths=[17 * cm])
+    risk_box.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), r_bg),
+        ('BOX', (0, 0), (-1, -1), 1.5, r_bc),
+        ('PADDING', (0, 0), (-1, -1), 14),
+    ]))
+    story.append(risk_box)
+    story.append(Spacer(1, 1.5 * cm))
     story.append(Paragraph(
-        "AI Tele-Ophthalmology Screening Platform | EfficientNet-B0 | ODIR-5K Dataset",
-        small_style
+        '"This report is AI-assisted and must be confirmed by a qualified ophthalmologist."',
+        s['note']
     ))
-
-    doc.build(story)
+    story.append(PageBreak())
+ 
+    # ══════════════════════════════════════════════════════════
+    # PAGE 2 - PATIENT PROFILE & SYMPTOMS
+    # ══════════════════════════════════════════════════════════
+    _section(story, "Patient Information", s)
+    info_data = [
+        _info_row("Full Name",  patient_name, s),
+        _info_row("Age",        f"{patient_age} years", s),
+        _info_row("Gender",     patient_gender, s),
+        _info_row("Email",      patient_email or "Not provided", s),
+        _info_row("Patient ID", patient_id, s),
+    ]
+    info_table = Table(info_data, colWidths=[4 * cm, 14 * cm])
+    info_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), LIGHT_GRAY),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#e2e8f0')),
+        ('PADDING', (0, 0), (-1, -1), 6),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+    ]))
+    story.append(info_table)
+    story.append(Spacer(1, 0.4 * cm))
+ 
+    _section(story, "Reported Symptoms", s)
+    story.append(Paragraph(f"Method: {symptoms_method.title()}", s['body']))
+    if voice_transcript:
+        story.append(Paragraph(f"Voice transcript ({voice_language}): {voice_transcript}", s['note']))
+ 
+    # Strip front-eye data from symptoms for clean display
+    clean_symptoms = symptoms.split(" | Front-eye:")[0] if " | Front-eye:" in symptoms else symptoms
+    story.append(Paragraph(f"Symptoms: {clean_symptoms or 'Not specified'}", s['body']))
+    story.append(Spacer(1, 0.3 * cm))
+ 
+    if questionnaire_answers:
+        _section(story, "Symptom Questionnaire", s)
+        q_data = [["Question", "Response"]]
+        for q, ans in questionnaire_answers.items():
+            q_data.append([q, "Yes" if ans else "No"])
+        q_table = Table(q_data, colWidths=[13 * cm, 5 * cm])
+        q_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), DARK_BLUE),
+            ('TEXTCOLOR', (0, 0), (-1, 0), WHITE),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#e2e8f0')),
+            ('PADDING', (0, 0), (-1, -1), 5),
+            ('ALIGN', (1, 0), (1, -1), 'CENTER'),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, LIGHT_GRAY]),
+        ]))
+        story.append(q_table)
+        story.append(Spacer(1, 0.3 * cm))
+ 
+    story.append(Paragraph(
+        f"AI Triage Decision: {'Retinal scan recommended' if triage_decision == 'fundus' else 'Front-eye screening recommended'}",
+        s['body']
+    ))
+    story.append(PageBreak())
+ 
+    # ══════════════════════════════════════════════════════════
+    # PAGE 3 - FRONT EYE ANALYSIS
+    # ══════════════════════════════════════════════════════════
+    _section(story, "Front Eye Analysis", s)
+ 
+    if front_eye_image_pil and front_eye_results:
+        fe_quality_display = front_eye_quality if front_eye_quality > 0 else quality_score
+        story.append(Paragraph(f"Image Quality: {fe_quality_display}%", s['body']))
+        story.append(Spacer(1, 0.3 * cm))
+ 
+        fe_buf = _pil_to_buf(front_eye_image_pil, (250, 250))
+        fe_img = Image(fe_buf, width=6 * cm, height=6 * cm)
+ 
+        fe_data = [["Condition", "Confidence", "Status"]]
+        for cond, conf in sorted(front_eye_results.items(), key=lambda x: x[1], reverse=True):
+            status = "Detected" if conf > 0.6 else "Possible" if conf > 0.3 else "Normal"
+            fe_data.append([cond, f"{conf * 100:.0f}%", status])
+ 
+        fe_table = Table(fe_data, colWidths=[7 * cm, 3 * cm, 3 * cm])
+        fe_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), DARK_BLUE),
+            ('TEXTCOLOR', (0, 0), (-1, 0), WHITE),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#e2e8f0')),
+            ('PADDING', (0, 0), (-1, -1), 5),
+            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, LIGHT_GRAY]),
+        ]))
+ 
+        img_result_table = Table([[fe_img, fe_table]], colWidths=[7 * cm, 10 * cm])
+        img_result_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('PADDING', (0, 0), (-1, -1), 4),
+        ]))
+        story.append(img_result_table)
+        story.append(Spacer(1, 0.3 * cm))
+ 
+        if front_eye_recommendations:
+            story.append(Paragraph("Recommendations:", s['label']))
+            for rec in front_eye_recommendations:
+                story.append(Paragraph(f"- {rec}", s['body']))
+    else:
+        story.append(Paragraph("No front eye photo was provided for this screening.", s['note']))
+ 
+    story.append(PageBreak())
+ 
+    # ══════════════════════════════════════════════════════════
+    # PAGE 4 - RETINAL FUNDUS ANALYSIS
+    # ══════════════════════════════════════════════════════════
+    _section(story, "Retinal Fundus Analysis", s)
+ 
+    if original_image_pil is not None:
+        story.append(Paragraph(f"Image Quality Score: {quality_score}%", s['body']))
+        if quality_tips:
+            for tip in quality_tips:
+                story.append(Paragraph(f"  Note: {tip}", s['note']))
+        story.append(Spacer(1, 0.3 * cm))
+ 
+        orig_buf = _pil_to_buf(original_image_pil, (280, 280))
+        orig_img = Image(orig_buf, width=6.5 * cm, height=6.5 * cm)
+ 
+        if heatmap_array is not None:
+            heat_buf = _np_to_buf(heatmap_array)
+            heat_img = Image(heat_buf, width=6.5 * cm, height=6.5 * cm)
+            img_table = Table([[orig_img, heat_img]], colWidths=[8.5 * cm, 8.5 * cm])
+            cap_table = Table(
+                [[Paragraph("Original Fundus Image", s['caption']),
+                  Paragraph("GradCAM AI Attention Map (Red/yellow = areas of focus)", s['caption'])]],
+                colWidths=[8.5 * cm, 8.5 * cm]
+            )
+        else:
+            img_table = Table([[orig_img]], colWidths=[8.5 * cm])
+            cap_table = Table(
+                [[Paragraph("Original Fundus Image", s['caption'])]],
+                colWidths=[8.5 * cm]
+            )
+ 
+        img_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        story.append(img_table)
+        story.append(cap_table)
+        story.append(Spacer(1, 0.4 * cm))
+ 
+        chart_buf = _bar_chart(probs)
+        chart_img = Image(chart_buf, width=17 * cm, height=8 * cm)
+        story.append(chart_img)
+        story.append(Spacer(1, 0.3 * cm))
+ 
+        pred_data = [["Disease", "Confidence", "Flag"]]
+        for i, name in enumerate(DISEASE_NAMES):
+            p    = probs[i]
+            flag = "HIGH" if p > 0.7 else "MODERATE" if p > 0.5 else "LOW" if p > 0.3 else "-"
+            pred_data.append([name, f"{p * 100:.1f}%", flag])
+ 
+        pred_table = Table(pred_data, colWidths=[8 * cm, 4 * cm, 5 * cm])
+        style_cmds = [
+            ('BACKGROUND', (0, 0), (-1, 0), DARK_BLUE),
+            ('TEXTCOLOR', (0, 0), (-1, 0), WHITE),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#e2e8f0')),
+            ('PADDING', (0, 0), (-1, -1), 5),
+            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+        ]
+        for i, p in enumerate(probs, 1):
+            if p > 0.7:
+                style_cmds.append(('BACKGROUND', (0, i), (-1, i), colors.HexColor('#fff0f0')))
+            elif p > 0.5:
+                style_cmds.append(('BACKGROUND', (0, i), (-1, i), colors.HexColor('#fffbe6')))
+            else:
+                style_cmds.append(('BACKGROUND', (0, i), (-1, i), WHITE if i % 2 == 0 else LIGHT_GRAY))
+        pred_table.setStyle(TableStyle(style_cmds))
+        story.append(pred_table)
+    else:
+        story.append(Paragraph("No retinal scan was provided for this screening.", s['note']))
+ 
+    story.append(PageBreak())
+ 
+    # ══════════════════════════════════════════════════════════
+    # PAGE 5 - DISEASE INFORMATION
+    # ══════════════════════════════════════════════════════════
+    _section(story, "What These Findings Mean", s)
+    story.append(Paragraph("Plain-language explanations for the detected conditions.", s['note']))
+    story.append(Spacer(1, 0.2 * cm))
+ 
+    non_normal = []
+    if probs is not None:
+        non_normal = [(DISEASE_NAMES[i], probs[i]) for i in range(1, 8) if probs[i] > 0.3]
+ 
+    if non_normal:
+        for dname, dp in sorted(non_normal, key=lambda x: x[1], reverse=True):
+            info = DISEASE_INFO.get(dname)
+            if not info:
+                continue
+            story.append(Paragraph(f"{dname} ({dp * 100:.0f}% confidence)", s['section']))
+            d_data = [
+                ["What is it?",   info['what']],
+                ["Symptoms",      info['symptoms']],
+                ["What to do",    info['urgency']],
+                ["Important tip", info['tip']],
+            ]
+            d_table = Table(d_data, colWidths=[3.5 * cm, 13.5 * cm])
+            d_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), LIGHT_GRAY),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#e2e8f0')),
+                ('PADDING', (0, 0), (-1, -1), 6),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('ROWBACKGROUNDS', (1, 0), (1, -1), [WHITE, LIGHT_GRAY, WHITE, LIGHT_GRAY]),
+            ]))
+            story.append(d_table)
+            story.append(Spacer(1, 0.4 * cm))
+    else:
+        story.append(Paragraph("No significant conditions detected above 30% confidence threshold.", s['body']))
+ 
+    story.append(PageBreak())
+ 
+    # ══════════════════════════════════════════════════════════
+    # PAGE 6 - DOCTOR'S REVIEW
+    # ══════════════════════════════════════════════════════════
+    _section(story, "Specialist Review", s)
+ 
+    if doctor_diagnosis:
+        dr_data = [
+            _info_row("Reviewed by",  doctor_name or "-", s),
+            _info_row("Review date",  reviewed_at or "-", s),
+            _info_row("Diagnosis",    doctor_diagnosis, s),
+            _info_row("Treatment",    doctor_prescription or "None", s),
+            _info_row("Referral",     doctor_referral or "-", s),
+        ]
+        if doctor_notes:
+            dr_data.append(_info_row("Notes", doctor_notes, s))
+        dr_table = Table(dr_data, colWidths=[4 * cm, 14 * cm])
+        dr_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), LIGHT_GRAY),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#e2e8f0')),
+            ('PADDING', (0, 0), (-1, -1), 6),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ]))
+        story.append(dr_table)
+    else:
+        story.append(Paragraph("This case is currently awaiting specialist review.", s['note']))
+ 
+    if chat_messages:
+        story.append(Spacer(1, 0.4 * cm))
+        _section(story, "Messages", s)
+        for msg in chat_messages:
+            role = msg.get('sender_role', '').title()
+            name = msg.get('sender_name', '')
+            ts   = msg.get('timestamp', '')
+            text = msg.get('text', '')
+            story.append(Paragraph(f"{name} ({role}) - {ts}", s['label']))
+            story.append(Paragraph(text, s['body']))
+            story.append(Spacer(1, 0.2 * cm))
+ 
+    story.append(PageBreak())
+ 
+    # ══════════════════════════════════════════════════════════
+    # PAGE 7 - VISIT HISTORY
+    # ══════════════════════════════════════════════════════════
+    _section(story, "Previous Screening History", s)
+ 
+    if recent_visits and len(recent_visits) > 1:
+        hist_data = [["Visit", "Date", "Risk", "Top Finding", "Confidence"]]
+        for i, v in enumerate(recent_visits):
+            det   = v.get('detected_conditions', [])
+            top   = max(det, key=lambda x: x[1]) if det else ("Normal", 0)
+            risk  = v['risk_level']
+            r     = risk.lower()
+            lvl   = "High" if ("high" in r or "specialist" in r) else "Moderate" if ("moderate" in r or "follow" in r) else "Low"
+            label = "Current" if i == len(recent_visits) - 1 else f"Visit {i + 1}"
+            hist_data.append([label, v['timestamp'][:11], lvl, top[0], f"{top[1] * 100:.0f}%"])
+ 
+        hist_table = Table(hist_data, colWidths=[3 * cm, 4 * cm, 3 * cm, 5.5 * cm, 2.5 * cm])
+        hist_style = [
+            ('BACKGROUND', (0, 0), (-1, 0), DARK_BLUE),
+            ('TEXTCOLOR', (0, 0), (-1, 0), WHITE),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#e2e8f0')),
+            ('PADDING', (0, 0), (-1, -1), 5),
+            ('ALIGN', (2, 0), (-1, -1), 'CENTER'),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, LIGHT_GRAY]),
+            ('BACKGROUND', (0, len(recent_visits)), (-1, len(recent_visits)), colors.HexColor('#f0fdf4')),
+            ('FONTNAME', (0, len(recent_visits)), (-1, len(recent_visits)), 'Helvetica-Bold'),
+        ]
+        hist_table.setStyle(TableStyle(hist_style))
+        story.append(hist_table)
+        story.append(Spacer(1, 0.4 * cm))
+ 
+        trend_buf = _trend_chart(recent_visits)
+        if trend_buf:
+            story.append(Paragraph("Risk Trend Over Time", s['label']))
+            trend_img = Image(trend_buf, width=17 * cm, height=6 * cm)
+            story.append(trend_img)
+    else:
+        story.append(Paragraph("This is the patient's first screening. No previous history available.", s['note']))
+ 
+    story.append(PageBreak())
+ 
+    # ══════════════════════════════════════════════════════════
+    # PAGE 8 - DISCLAIMER & FOOTER
+    # ══════════════════════════════════════════════════════════
+    _section(story, "Report Information", s)
+    footer_data = [
+        _info_row("Report ID",  report_id, s),
+        _info_row("Generated",  now_str, s),
+        _info_row("Platform",   "Nayana AI Tele-Ophthalmology v1.0", s),
+        _info_row("AI Model",   "EfficientNet-B0 - ODIR-5K (8 diseases)", s),
+        _info_row("Eye Model",  "EfficientNet-B0 - External Eye (6 conditions)", s),
+    ]
+    footer_table = Table(footer_data, colWidths=[4 * cm, 14 * cm])
+    footer_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), LIGHT_GRAY),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#e2e8f0')),
+        ('PADDING', (0, 0), (-1, -1), 6),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+    ]))
+    story.append(footer_table)
+    story.append(Spacer(1, 0.6 * cm))
+ 
+    _section(story, "Disclaimer", s)
+    story.append(Paragraph(
+        "This report is generated by an AI screening system and is intended for informational "
+        "and preliminary screening purposes only. It does NOT constitute a medical diagnosis. "
+        "All findings must be reviewed and confirmed by a qualified ophthalmologist before any "
+        "clinical or treatment decisions are made. In case of high-risk findings, please refer "
+        "to a specialist immediately. Nayana AI is not liable for any decisions made solely "
+        "on the basis of this report.",
+        s['body']
+    ))
+    story.append(Spacer(1, 0.6 * cm))
+ 
+    _section(story, "Emergency Eye Care Contacts", s)
+    contact_data = [
+        ["Hospital", "Phone", "City"],
+        ["Sankara Nethralaya",      "044-28281919", "Chennai"],
+        ["Narayana Nethralaya",     "080-66121900", "Bengaluru"],
+        ["LV Prasad Eye Institute", "040-30612612", "Hyderabad"],
+        ["Aravind Eye Hospital",    "0452-4356100", "Madurai"],
+    ]
+    contact_table = Table(contact_data, colWidths=[7 * cm, 5 * cm, 5 * cm])
+    contact_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), DARK_BLUE),
+        ('TEXTCOLOR', (0, 0), (-1, 0), WHITE),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#e2e8f0')),
+        ('PADDING', (0, 0), (-1, -1), 5),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, LIGHT_GRAY]),
+    ]))
+    story.append(contact_table)
+    story.append(Spacer(1, 0.8 * cm))
+    story.append(Paragraph("nayana - the eye", s['cover_title']))
+ 
+    doc.build(story, onFirstPage=_header_footer, onLaterPages=_header_footer)
     return output_path
+ 
