@@ -829,7 +829,74 @@ def render_doctor_patient_history(patient_email, doctor_name,
                      key=f"save_note_{patient_email}_{id(patient_email)}"):
             if new_note.strip():
                 add_continuity_note(
-                    patient_email,
+                    patient_email,if st.button("Download Full History as PDF",
+             width='stretch',
+             key="dl_full_history"):
+    with st.spinner("Generating your complete health file..."):
+        from report_generator import generate_report
+        import zipfile
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, 'w') as zf:
+            for v in visits:
+                try:
+                    case_probs = np.array(v.get('probs',[0]*8))
+                    case_det   = v.get('detected_conditions',[])
+                    msgs       = load_messages(v['case_id'])
+                    with tempfile.NamedTemporaryFile(
+                        delete=False, suffix='.pdf'
+                    ) as tmp:
+                        pdf_path = generate_report(
+                            patient_name=v['patient_name'],
+                            patient_age=v['patient_age'],
+                            patient_gender=v['patient_gender'],
+                            patient_email=patient_email,
+                            symptoms=v['symptoms'],
+                            quality_score=v['quality_score'],
+                            quality_tips=[],
+                            probs=case_probs,
+                            detected_conditions=case_det,
+                            risk_level=v['risk_level'],
+                            risk_type=(
+                                'high' if 'High' in v['risk_level']
+                                or 'specialist' in v['risk_level']
+                                else 'moderate' if 'Moderate' in v['risk_level']
+                                else 'low'
+                            ),
+                            original_image_pil=Image.open(
+                                v['image_path'])
+                                if v.get('image_path') and
+                                os.path.exists(v['image_path'])
+                                else None,
+                            heatmap_array=np.array(
+                                Image.open(v['heatmap_path']))
+                                if v.get('heatmap_path') and
+                                os.path.exists(v['heatmap_path'])
+                                else None,
+                            doctor_diagnosis=v.get('doctor_diagnosis'),
+                            doctor_prescription=v.get('doctor_prescription'),
+                            doctor_referral=v.get('doctor_referral'),
+                            doctor_notes=v.get('doctor_notes'),
+                            reviewed_at=v.get('reviewed_at'),
+                            chat_messages=msgs,
+                            visit_history=visits,
+                            output_path=tmp.name
+                        )
+                    zf.write(pdf_path,
+                             f"nayana_{v['case_id']}.pdf")
+                except Exception as e:
+                    st.warning(
+                        f"Could not generate report for "
+                        f"{v['case_id']}: {e}")
+        zip_buf.seek(0)
+    st.download_button(
+        "Download ZIP",
+        data=zip_buf.read(),
+        file_name=f"nayana_all_reports_"
+                  f"{profile['name'].replace(' ','_')}.zip",
+        mime="application/zip",
+        width='stretch',
+        key="dl_zip_btn"
+    )
                     f"Dr. {doctor_name}",
                     new_note.strip()
                 )

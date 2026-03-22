@@ -19,5 +19,23 @@
       "CASE-0010",
       "CASE-0011"
     ]
+  },
+  "patient@patient.com": {
+    "profile": {
+      "name": "patient1",
+      "age": 30,
+      "gender": "Female",
+      "patient_id": "P-26545",
+      "joined": "22 Mar 2026",
+      "blood_group": "",
+      "known_conditions": [],
+      "family_history": [],
+      "current_medications": [],
+      "allergies": []
+    },
+    "continuity_notes": [],
+    "visit_ids": [
+      "CASE-0017"
+    ]
   }
 }

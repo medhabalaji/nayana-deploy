@@ -76,5 +76,18 @@
     "case_id": "CASE-0011",
     "notes": "",
     "created_at": "22 Mar 2026, 05:00 PM"
+  },
+  {
+    "appointment_id": "APPT-0007",
+    "patient_email": "patient@patient.com",
+    "patient_name": "patient1",
+    "doctor_email": "abx",
+    "doctor_name": "doctor1",
+    "date": "2026-03-22",
+    "time_slot": "09:00 AM",
+    "status": "Pending",
+    "case_id": "CASE-0017",
+    "notes": "",
+    "created_at": "22 Mar 2026, 09:24 PM"
   }
 ]
