@@ -63,5 +63,18 @@
     "case_id": "CASE-0010",
     "notes": "",
     "created_at": "22 Mar 2026, 03:23 PM"
+  },
+  {
+    "appointment_id": "APPT-0006",
+    "patient_email": "khushi@khushi.com",
+    "patient_name": "khushu",
+    "doctor_email": "anagha@anagha.com",
+    "doctor_name": "anagha",
+    "date": "2026-03-22",
+    "time_slot": "09:00 AM",
+    "status": "Pending",
+    "case_id": "CASE-0011",
+    "notes": "",
+    "created_at": "22 Mar 2026, 05:00 PM"
   }
 ]
