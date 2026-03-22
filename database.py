@@ -154,3 +154,10 @@ def get_risk_trend(patient_email):
             return 2
         return 1
     return [(v["timestamp"][:6], risk_score(v["risk_level"])) for v in visits]
+
+def load_appointments():
+    APPOINTMENTS_FILE = "appointments.json"
+    if not os.path.exists(APPOINTMENTS_FILE):
+        return []
+    with open(APPOINTMENTS_FILE, 'r') as f:
+        return json.load(f)
