@@ -1446,6 +1446,6 @@ elif st.session_state['role'] == 'doctor':
         ):
             render_doctor_patient_history(
                 case.get('patient_email', ''),
-                doc['name']s
+                doc['name']
             )
 st.write("")
