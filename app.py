@@ -212,6 +212,26 @@ def analyze_front_eye(image_pil):
     }
     return {display_map.get(cls, cls): float(prob)
             for cls, prob in zip(EYE_CLASSES, probs)}
+def capture_and_detect_eye(image_pil):
+    img_np = np.array(image_pil.convert('RGB'))
+    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    eye_cascade = cv2.CascadeClassifier(
+        cv2.data.haarcascades + 'haarcascade_eye.xml')
+    eyes = eye_cascade.detectMultiScale(gray, 1.3, 5)
+    if len(eyes) == 0:
+        return None, False, None
+    (x, y, w, h) = sorted(eyes, key=lambda e: e[2], reverse=True)[0]
+    eye_roi = img_bgr[y:y+h, x:x+w]
+    roi_gray = cv2.cvtColor(eye_roi, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+    roi_adj = clahe.apply(roi_gray)
+    roi_final = cv2.merge([roi_adj, roi_adj, roi_adj])
+    img_annotated = img_np.copy()
+    cv2.rectangle(img_annotated, (x,y), (x+w, y+h), (0,255,0), 2)
+    cleaned_pil = Image.fromarray(cv2.cvtColor(roi_final, cv2.COLOR_BGR2RGB))
+    annotated_pil = Image.fromarray(img_annotated)
+    return cleaned_pil, True, annotated_pil
 
 def get_front_eye_recommendations(results):
     recommendations = []
@@ -1281,10 +1301,24 @@ elif st.session_state['role'] == 'patient':
                             st.rerun()
                     else:
                         front_up_cam = st.camera_input(
-                            "Point at your eye",
+                            "Point your eye at the camera",
                             key="front_camera")
                         if front_up_cam:
-                            front_up = front_up_cam
+                            raw_pil = Image.open(front_up_cam).convert('RGB')
+                            cleaned_pil, found, annotated_pil = capture_and_detect_eye(raw_pil)
+                            if not found:
+                                st.warning("No eye detected — centre your eye and retake")
+                            else:
+                                c1, c2 = st.columns(2)
+                                c1.image(annotated_pil, caption="Eye detected", use_container_width=True)
+                                c2.image(cleaned_pil, caption="AI cleaned view", use_container_width=True)
+                                st.success("Eye detected and cleaned — proceeding to analysis")
+                                import io
+                                buf = io.BytesIO()
+                                cleaned_pil.save(buf, format='PNG')
+                                buf.seek(0)
+                                front_up = buf
+                                st.session_state['front_pil'] = cleaned_pil
                         if st.button("Turn off camera",
                                      key="off_front_cam"):
                             st.session_state[
