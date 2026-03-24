@@ -703,7 +703,11 @@ def render_patient_health_record(user):
                 ]
             })
             st.success("Profile saved!")
-
+            if st.session_state.get('return_to_screening'):
+                st.session_state['return_to_screening'] = False
+                st.session_state['page'] = 'screening'
+                st.session_state['screening_step'] = 2
+                st.rerun()
 
 # ── Doctor view ────────────────────────────────────────────────
 def render_doctor_patient_history(patient_email,

@@ -315,6 +315,45 @@ hr {{ border-color: {hr_col} !important; }}
 ::-webkit-scrollbar {{ width: 5px; height: 5px; }}
 ::-webkit-scrollbar-track {{ background: {scroll_bg}; }}
 ::-webkit-scrollbar-thumb {{ background: {scroll_th}; border-radius: 3px; }}
+/* ── Sidebar ── */
+[data-testid="stSidebar"] {{
+    background: {surface} !important;
+    border-right: 2px solid {border} !important;
+}}
+[data-testid="stSidebar"] * {{
+    color: {text} !important;
+}}
+[data-testid="stSidebar"] .stButton > button {{
+    background: {card_bg} !important;
+    color: {text} !important;
+    border: 2px solid {border} !important;
+    border-radius: 12px !important;
+    font-family: 'Space Grotesk', sans-serif !important;
+    font-weight: 600 !important;
+    width: 100% !important;
+    text-align: left !important;
+}}
+[data-testid="stSidebar"] .stButton > button:hover {{
+    border-color: {accent} !important;
+    color: {accent} !important;
+}}
+[data-testid="stSidebar"] .stButton > button[kind="primary"] {{
+    background: linear-gradient(135deg, {accent}, {accent2}) !important;
+    color: #ffffff !important;
+    border: none !important;
+}}
+[data-testid="stSidebar"] [data-testid="stMetric"] {{
+    background: {card_bg} !important;
+    border: 1px solid {border} !important;
+    border-radius: 12px !important;
+    padding: 12px !important;
+}}
+[data-testid="stSidebar"] [data-testid="stMetricValue"] {{
+    color: {metric_v} !important;
+}}
+[data-testid="stSidebar"] hr {{
+    border-color: {hr_col} !important;
+}}
 
 /* ══ Custom components ══ */
 .nayana-hero {{
