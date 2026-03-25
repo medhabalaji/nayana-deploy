@@ -218,8 +218,10 @@ button[data-testid="baseButton-secondary"] {{
 /* Specific fix for Camera Input 'Take Photo' button white text issue */
 [data-testid="stCameraInputButton"],
 [data-testid="stCameraInput"] button {{
-    color: {text} !important;
-    font-weight: 600 !important;
+    background-color: {accent} !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    border: none !important;
 }}
 
 /* ── Tabs ── */

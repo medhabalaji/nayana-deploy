@@ -106,6 +106,19 @@ def update_appointment_status(appt_id, status):
     encrypted = encrypt_data(json.dumps(appointments, indent=2))
     with open(APPOINTMENTS_FILE, 'wb') as f:
         f.write(encrypted)
+
+@st.experimental_dialog("Appointment Confirmed", width="small")
+def show_booking_success(details):
+    st.success(f"Successfully booked with Dr. {details['doc_name']}!")
+    st.markdown(f"**Date:** {details['date']}")
+    st.markdown(f"**Time:** {details['time_slot']}")
+    st.markdown(f"**Booking ID:** {details['appt_id']}")
+    st.info("Check your 'Appointments' tab for the meeting link.")
+    if st.button("Close & Continue", use_container_width=True, type="primary"):
+        del st.session_state['appt_success_details']
+        st.session_state['last_case_id'] = details['cid']
+        st.rerun()
+
 # ── Chat ───────────────────────────────────────────────────────
 MESSAGES_FILE = "messages.json"
 
@@ -322,6 +335,10 @@ for key, val in {
 }.items():
     if key not in st.session_state:
         st.session_state[key] = val
+
+# ── Dialog Triggers ────────────────────────────────────────────
+if 'appt_success_details' in st.session_state:
+    show_booking_success(st.session_state['appt_success_details'])
 
 # ── Consent popup gate ─────────────────────────────────────────
 if not st.session_state['consent_accepted']:
@@ -1800,11 +1817,13 @@ border:1px solid rgba(99,102,241,0.2);">
                                 if err:
                                     st.error(err)
                                 else:
-                                    st.success(
-                                        f"Appointment booked — ID: {appt_id} "
-                                        f"with Dr. {selected_doc['name']} "
-                                        f"on {appt_date} at {time_slot}")
-                                    st.session_state['last_case_id'] = cid
+                                    st.session_state['appt_success_details'] = {
+                                        'doc_name': selected_doc['name'],
+                                        'date': appt_date,
+                                        'time_slot': time_slot,
+                                        'appt_id': appt_id,
+                                        'cid': cid
+                                    }
                                     st.rerun()
 
                     with ac2:

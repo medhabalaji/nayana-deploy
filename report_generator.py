@@ -287,7 +287,7 @@ def generate_report(
         ["Age / Gender", f"{patient_age}y / {patient_gender}", "Screened by", "Nayana AI v1.0"],
         ["Email",        patient_email or "-", "Language",  language],
     ]
-    cover_table = Table(cover_data, colWidths=[3.5 * cm, 5.5 * cm, 3.5 * cm, 5.5 * cm])
+    cover_table = Table(cover_data, colWidths=[3 * cm, 5.5 * cm, 3.5 * cm, 5 * cm])
     cover_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (0, -1), LIGHT_GRAY),
         ('BACKGROUND', (2, 0), (2, -1), LIGHT_GRAY),
@@ -359,7 +359,7 @@ def generate_report(
         q_data = [["Question", "Response"]]
         for q, ans in questionnaire_answers.items():
             q_data.append([q, "Yes" if ans else "No"])
-        q_table = Table(q_data, colWidths=[13 * cm, 5 * cm])
+        q_table = Table(q_data, colWidths=[12 * cm, 5 * cm])
         q_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), DARK_BLUE),
             ('TEXTCOLOR', (0, 0), (-1, 0), WHITE),
@@ -636,7 +636,7 @@ def generate_report(
         _info_row("AI Model",   "EfficientNet-B0 - ODIR-5K (8 diseases)", s),
         _info_row("Eye Model",  "EfficientNet-B0 - External Eye (6 conditions)", s),
     ]
-    footer_table = Table(footer_data, colWidths=[4 * cm, 14 * cm])
+    footer_table = Table(footer_data, colWidths=[3.5 * cm, 13.5 * cm])
     footer_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (0, -1), LIGHT_GRAY),
         ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
@@ -711,7 +711,7 @@ def generate_prescription_pdf(
         ["Patient Name", patient_name, "Date", reviewed_at or datetime.now().strftime("%d %b %Y")],
         ["Age / Gender", f"{patient_age}y / {patient_gender}", "Case ID", case_id]
     ]
-    p_table = Table(p_data, colWidths=[3.5 * cm, 5.5 * cm, 3.5 * cm, 5.5 * cm])
+    p_table = Table(p_data, colWidths=[3 * cm, 5.5 * cm, 3.5 * cm, 5 * cm])
     p_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (0, -1), LIGHT_GRAY),
         ('BACKGROUND', (2, 0), (2, -1), LIGHT_GRAY),

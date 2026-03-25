@@ -644,47 +644,41 @@ def render_chatbot_screening(user: dict):
     # STAGE: questionnaire
     # ═══════════════════════════════════════════════════════════
     elif stage == 'questionnaire':
-        idx   = st.session_state.get('quest_index', 0)
-        total = len(QUESTIONNAIRE)
-        _step_indicator(f"Step 1 of 3 — Question {idx + 1} of {total}")
+        _step_indicator("Step 1 of 3 — Rapid Questionnaire")
+        _user_bubble("Answer a quick questionnaire")
+        _bot_bubble(
+            "Please check any of the following that apply to you. "
+            "You can select multiple options."
+        )
 
-        if idx > 0:
-            prev_q, prev_sym = QUESTIONNAIRE[idx - 1]
-            was_yes = prev_sym in st.session_state.get('chat_symptoms', [])
-            _user_bubble("Yes" if was_yes else "No")
+        with st.container():
+            st.markdown('<div style="background:rgba(255,255,255,0.03);padding:20px;border-radius:16px;border:1px solid rgba(129,140,248,0.2);">', unsafe_allow_html=True)
+            
+            # We'll show checkboxes for all items in QUESTIONNAIRE
+            selected_symptoms = []
+            cols = st.columns(2)
+            for i, (question, symptom) in enumerate(QUESTIONNAIRE):
+                with cols[i % 2]:
+                    # Default state is based on if this symptom was already collected (e.g. via typing)
+                    was_picked = symptom in st.session_state.get('chat_symptoms', [])
+                    if st.checkbox(question, value=was_picked, key=f"q_check_{i}"):
+                        selected_symptoms.append(symptom)
+            
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        question, symptom = QUESTIONNAIRE[idx]
-        _bot_bubble(f"<strong>Question {idx+1}/{total}</strong><br><br>{question}")
-
-        # progress bar
-        st.progress(idx / total)
-
+        st.markdown("<br>", unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1:
-            if st.button("Yes", type="primary",
-                         use_container_width=True,
-                         key=f"cb_q_yes_{idx}"):
-                syms = st.session_state.get('chat_symptoms', [])
-                if symptom not in syms:
-                    syms.append(symptom)
-                st.session_state['chat_symptoms'] = syms
-                if idx + 1 >= total:
-                    st.session_state['chat_stage'] = 'symptom_confirm'
-                else:
-                    st.session_state['quest_index'] = idx + 1
+            if st.button("Confirm & Continue →", type="primary", use_container_width=True, key="cb_q_finish"):
+                # Merge with existing symptoms and deduplicate
+                st.session_state['chat_symptoms'] = list(set(
+                    st.session_state.get('chat_symptoms', []) + selected_symptoms
+                ))
+                st.session_state['chat_stage'] = 'symptom_confirm'
                 st.rerun()
         with c2:
-            if st.button("No", use_container_width=True,
-                         key=f"cb_q_no_{idx}"):
-                if idx + 1 >= total:
-                    st.session_state['chat_stage'] = 'symptom_confirm'
-                else:
-                    st.session_state['quest_index'] = idx + 1
-                st.rerun()
-
-        if idx > 0:
-            if st.button("← Previous question", key=f"cb_q_prev_{idx}"):
-                st.session_state['quest_index'] = idx - 1
+            if st.button("← Back", use_container_width=True, key="cb_q_back"):
+                st.session_state['chat_stage'] = 'mode_select'
                 st.rerun()
 
     # ═══════════════════════════════════════════════════════════
