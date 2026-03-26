@@ -397,7 +397,13 @@ def generate_report(
             status = "Detected" if conf > 0.6 else "Possible" if conf > 0.3 else "Normal"
             fe_data.append([cond, f"{conf * 100:.0f}%", status])
  
-        fe_table = Table(fe_data, colWidths=[7 * cm, 3 * cm, 3 * cm])
+        fe_img.width  = 10 * cm
+        fe_img.height = 10 * cm
+        fe_img.hAlign = 'CENTER'
+        story.append(fe_img)
+        story.append(Spacer(1, 0.4 * cm))
+
+        fe_table = Table(fe_data, colWidths=[10 * cm, 3.5 * cm, 3.5 * cm])
         fe_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), DARK_BLUE),
             ('TEXTCOLOR', (0, 0), (-1, 0), WHITE),
@@ -408,13 +414,7 @@ def generate_report(
             ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, LIGHT_GRAY]),
         ]))
- 
-        img_result_table = Table([[fe_img, fe_table]], colWidths=[7 * cm, 10 * cm])
-        img_result_table.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('PADDING', (0, 0), (-1, -1), 4),
-        ]))
-        story.append(img_result_table)
+        story.append(fe_table)
         story.append(Spacer(1, 0.3 * cm))
  
         if front_eye_recommendations:
@@ -441,28 +441,22 @@ def generate_report(
         orig_buf = _pil_to_buf(original_image_pil, (280, 280))
         orig_img = Image(orig_buf, width=6.5 * cm, height=6.5 * cm)
  
+        orig_img.width  = 11 * cm
+        orig_img.height = 11 * cm
+        orig_img.hAlign = 'CENTER'
+        story.append(orig_img)
+        story.append(Paragraph("Original Fundus Image", s['caption']))
+        story.append(Spacer(1, 0.6 * cm))
+
         if heatmap_array is not None:
             heat_buf = _np_to_buf(heatmap_array)
-            heat_img = Image(heat_buf, width=6.5 * cm, height=6.5 * cm)
-            img_table = Table([[orig_img, heat_img]], colWidths=[8.5 * cm, 8.5 * cm])
-            cap_table = Table(
-                [[Paragraph("Original Fundus Image", s['caption']),
-                  Paragraph("GradCAM AI Attention Map (Red/yellow = areas of focus)", s['caption'])]],
-                colWidths=[8.5 * cm, 8.5 * cm]
-            )
-        else:
-            img_table = Table([[orig_img]], colWidths=[8.5 * cm])
-            cap_table = Table(
-                [[Paragraph("Original Fundus Image", s['caption'])]],
-                colWidths=[8.5 * cm]
-            )
- 
-        img_table.setStyle(TableStyle([
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ]))
-        story.append(img_table)
-        story.append(cap_table)
+            heat_img = Image(heat_buf)
+            heat_img.width  = 11 * cm
+            heat_img.height = 11 * cm
+            heat_img.hAlign = 'CENTER'
+            story.append(heat_img)
+            story.append(Paragraph("GradCAM AI Attention Map (Red/yellow = areas of focus)", s['caption']))
+            story.append(Spacer(1, 0.4 * cm))
         story.append(Spacer(1, 0.4 * cm))
  
         chart_buf = _bar_chart(probs)
@@ -555,7 +549,7 @@ def generate_report(
         ]
         if doctor_notes:
             dr_data.append(_info_row("Notes", doctor_notes, s))
-        dr_table = Table(dr_data, colWidths=[4 * cm, 14 * cm])
+        dr_table = Table(dr_data, colWidths=[4 * cm, 13 * cm])
         dr_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (0, -1), LIGHT_GRAY),
             ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
@@ -598,7 +592,7 @@ def generate_report(
             label = "Current" if i == len(recent_visits) - 1 else f"Visit {i + 1}"
             hist_data.append([label, v['timestamp'][:11], lvl, top[0], f"{top[1] * 100:.0f}%"])
  
-        hist_table = Table(hist_data, colWidths=[3 * cm, 4 * cm, 3 * cm, 5.5 * cm, 2.5 * cm])
+        hist_table = Table(hist_data, colWidths=[2.5 * cm, 3.5 * cm, 2.5 * cm, 6 * cm, 2.5 * cm])
         hist_style = [
             ('BACKGROUND', (0, 0), (-1, 0), DARK_BLUE),
             ('TEXTCOLOR', (0, 0), (-1, 0), WHITE),

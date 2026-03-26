@@ -403,8 +403,7 @@ def render_chatbot_screening(user: dict):
                 st.session_state['symp_final'] = "None — routine checkup"
                 st.session_state['triage']     = {"type": "front",
                                                    "reason": "Routine checkup"}
-                st.session_state['return_to_screening'] = True
-                st.session_state['page']                = 'health_record'
+                st.session_state['page']       = 'medical_history_form'
                 st.rerun()
         with c2:
             if st.button("Yes, let's go! →", use_container_width=True,

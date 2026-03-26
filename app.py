@@ -1916,6 +1916,11 @@ border:1px solid rgba(99,102,241,0.2);">
                     st.rerun()
             render_patient_health_record(user)
 
+        # ── Medical History Form page ───────────────────────────
+        elif st.session_state['page'] == 'medical_history_form':
+            from medical_history import render_medical_history_form
+            render_medical_history_form(user)
+
 # ══════════════════════════════════════════════════════════════
 # DOCTOR PORTAL
 # ══════════════════════════════════════════════════════════════
