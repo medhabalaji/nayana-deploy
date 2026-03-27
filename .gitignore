@@ -1,6 +1,3 @@
-odir_model.pth
-eye_model_v2_best.pth
-retina_model.pth
 *.json
 cases_images/
 doctor_docs/
