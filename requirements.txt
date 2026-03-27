@@ -1,0 +1,14 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+torchvision
+timm
+opencv-python-headless
+mediapipe
+numpy
+streamlit
+flask
+requests
+cryptography
+reportlab
+Pillow
+grad-cam

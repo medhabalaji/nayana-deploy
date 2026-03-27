@@ -1,3 +1,25 @@
+# --- CLOUD SAFE HARDWARE PATCH ---
+import sys
+import unittest.mock as mock
+
+# Trick the cloud server into thinking it has hardware & audio libraries
+try:
+    import RPi.GPIO
+except ImportError:
+    sys.modules['RPi'] = mock.MagicMock()
+    sys.modules['RPi.GPIO'] = mock.MagicMock()
+
+try:
+    import pyaudio
+except (ImportError, OSError):
+    sys.modules['pyaudio'] = mock.MagicMock()
+
+try:
+    import speech_recognition
+except ImportError:
+    sys.modules['speech_recognition'] = mock.MagicMock()
+# -----------------------------------
+
 import streamlit as st
 import cv2
 import numpy as np
@@ -24,6 +46,13 @@ from symptom_check import SYMPTOMS, triage
 from patient_records import (render_patient_health_record,
                               render_doctor_patient_history)
 import json
+from datetime import datetime
+import tempfile
+import os
+import hashlib
+from encryption import encrypt_data, decrypt_data
+from chatbot_flow import render_chatbot_screening
+from optical_health_scan import run_unified_scanner
 from datetime import datetime
 import tempfile
 import os
