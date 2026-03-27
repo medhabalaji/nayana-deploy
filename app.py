@@ -18,10 +18,15 @@ try:
     import speech_recognition
 except ImportError:
     sys.modules['speech_recognition'] = mock.MagicMock()
+
+try:
+    import cv2
+except (ImportError, OSError):
+    sys.modules['cv2'] = mock.MagicMock()
+
 # -----------------------------------
 
 import streamlit as st
-import cv2
 import numpy as np
 import torch
 from torchvision import transforms
@@ -61,7 +66,7 @@ from encryption import encrypt_data, decrypt_data
 from chatbot_flow import render_chatbot_screening
 from optical_health_scan import run_unified_scanner
 
-# ── Appointments ───────────────────────────────────────────────
+# ── Appointments ───────────────────────────────────────────────────────────────
 APPOINTMENTS_FILE = "appointments.json"
 
 ALL_TIME_SLOTS = [
@@ -417,9 +422,6 @@ if not st.session_state['consent_accepted']:
                 st.session_state['consent_accepted'] = True
                 st.rerun()
     st.stop()  # halt all further rendering until consent is given
-
-
-
 
 
 # ── ML helpers ─────────────────────────────────────────────────
