@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nayana.ai Diagnostics</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen p-8">
+
+    <div class="max-w-5xl mx-auto">
+        <header class="mb-10 text-center">
+            <h1 class="text-4xl font-bold text-blue-900 mb-2">👁️ Nayana.ai Hardware Dashboard</h1>
+            <p class="text-gray-500">Edge-to-Cloud Optical Screening System</p>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            
+            <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-100">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800">1. Edge Device Input</h2>
+                
+                <div class="aspect-video bg-gray-100 rounded-lg flex items-center justify-center mb-4 overflow-hidden border-2 border-dashed border-gray-300">
+                    <img id="image-preview" src="" alt="No image selected" class="hidden object-cover w-full h-full" />
+                    <span id="placeholder-text" class="text-gray-400">Waiting for payload...</span>
+                </div>
+
+                <input type="file" id="image-input" accept="image/*" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 mb-4"/>
+                
+                <button id="scan-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-md">
+                    Execute PyTorch Diagnostics
+                </button>
+            </div>
+
+            <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-100 flex flex-col">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800">2. Inference Engine Output</h2>
+                
+                <div id="loading" class="hidden flex-col items-center justify-center flex-grow">
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+                    <p class="text-gray-500 animate-pulse">Normalizing Tensors & Analyzing...</p>
+                </div>
+
+                <div id="results-box" class="flex-grow flex flex-col space-y-4">
+                    <div class="text-center text-gray-400 mt-10">Run diagnostics to view blockchain-secured results.</div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const imageInput = document.getElementById('image-input');
+        const imagePreview = document.getElementById('image-preview');
+        const placeholderText = document.getElementById('placeholder-text');
+        const scanBtn = document.getElementById('scan-btn');
+        const loadingBox = document.getElementById('loading');
+        const resultsBox = document.getElementById('results-box');
+
+        let selectedFile = null;
+
+        // Show image preview when a file is selected
+        imageInput.addEventListener('change', function(event) {
+            selectedFile = event.target.files[0];
+            if (selectedFile) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imagePreview.src = e.target.result;
+                    imagePreview.classList.remove('hidden');
+                    placeholderText.classList.add('hidden');
+                }
+                reader.readAsDataURL(selectedFile);
+            }
+        });
+
+        // Send to Python server when Scan is clicked
+        scanBtn.addEventListener('click', async () => {
+            if (!selectedFile) {
+                alert("Please select an image received from the Raspberry Pi first!");
+                return;
+            }
+
+            // UI Updates
+            resultsBox.innerHTML = '';
+            loadingBox.classList.remove('hidden');
+            resultsBox.classList.add('hidden');
+
+            const formData = new FormData();
+            formData.append('image', selectedFile);
+
+            try {
+                // Talk to your Flask Backend
+                const response = await fetch('http://127.0.0.1:5000/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                
+                // Hide loading, show results
+                loadingBox.classList.add('hidden');
+                resultsBox.classList.remove('hidden');
+
+                if (data.status === "success") {
+                    let resultsHTML = `<div class="bg-green-50 border-l-4 border-green-500 p-4 mb-4">
+                                        <p class="font-bold text-green-700">Diagnosis Complete</p>
+                                        <p class="text-sm text-green-600">Secure Audit Hash Generated</p>
+                                       </div>`;
+                    
+                    // Loop through the dictionary of predictions your Python code sent back
+                    for (const [condition, confidence] of Object.entries(data.predictions)) {
+                        const percentage = (confidence * 100).toFixed(1);
+                        resultsHTML += `
+                            <div class="bg-gray-50 p-3 rounded flex justify-between items-center border border-gray-200">
+                                <span class="font-semibold text-gray-700">${condition}</span>
+                                <span class="bg-blue-100 text-blue-800 py-1 px-3 rounded-full font-bold">${percentage}%</span>
+                            </div>
+                        `;
+                    }
+                    resultsBox.innerHTML = resultsHTML;
+                } else {
+                    resultsBox.innerHTML = `<p class="text-red-500 font-bold">Error: ${data.error}</p>`;
+                }
+
+            } catch (error) {
+                loadingBox.classList.add('hidden');
+                resultsBox.classList.remove('hidden');
+                resultsBox.innerHTML = `<p class="text-red-500 font-bold">Failed to connect to Python Backend. Is receiver.py running?</p>`;
+            }
+        });
+    </script>
+</body>
+</html>
