@@ -17,13 +17,19 @@ eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml
 
 # --- NEURAL NETWORK INITIALIZATION (If Available) ---
 if HAS_MEDIAPIPE:
-    mp_face_mesh = mp.solutions.face_mesh
-    face_mesh_instance = mp_face_mesh.FaceMesh(
-        max_num_faces=1,
-        refine_landmarks=True,
-        min_detection_confidence=0.6,
-        min_tracking_confidence=0.6
-    )
+    try:
+        mp_face_mesh = mp.solutions.face_mesh
+        face_mesh_instance = mp_face_mesh.FaceMesh(
+            max_num_faces=1,
+            refine_landmarks=True,
+            min_detection_confidence=0.6,
+            min_tracking_confidence=0.6
+        )
+    except (AttributeError, RuntimeError) as e:
+        print(f"MediaPipe initialization failed: {e}")
+        HAS_MEDIAPIPE = False
+        mp_face_mesh = None
+        face_mesh_instance = None
 
 # ── SHARED UTILITIES ───────────────────────────────────────────
 
