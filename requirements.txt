@@ -12,3 +12,4 @@ cryptography
 reportlab
 Pillow
 grad-cam
+deep-translator==1.11.4
